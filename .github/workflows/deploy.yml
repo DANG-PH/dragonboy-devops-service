@@ -155,6 +155,12 @@ jobs:
 
       - name: Notify Discord
         if: always()
+        env:
+          SERVICE: ${{ github.event.client_payload.service }}
+          ACTOR: ${{ github.event.client_payload.actor }}
+          COMMIT_SHA: ${{ github.event.client_payload.commit }}
+          COMMIT_MESSAGE: ${{ github.event.client_payload.message }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ "${{ job.status }}" == "success" ]; then
             COLOR=5763719
@@ -168,22 +174,34 @@ jobs:
 
           DEPLOY_TIME=$(TZ='Asia/Ho_Chi_Minh' date '+%d/%m/%Y %H:%M:%S')
 
+          PAYLOAD=$(jq -n \
+            --arg content "$STATUS" \
+            --arg title "$TITLE" \
+            --argjson color "$COLOR" \
+            --arg service "$SERVICE" \
+            --arg actor "$ACTOR" \
+            --arg deployTime "$DEPLOY_TIME (UTC+7)" \
+            --arg commit "$COMMIT_SHA" \
+            --arg message "$COMMIT_MESSAGE" \
+            --arg logValue "[Bấm vào đây]($RUN_URL)" \
+            '{
+              content: $content,
+              embeds: [{
+                title: $title,
+                color: $color,
+                fields: [
+                  { name: "Service", value: $service, inline: true },
+                  { name: "Actor", value: $actor, inline: true },
+                  { name: "Thời gian", value: $deployTime, inline: true },
+                  { name: "Commit", value: $commit, inline: false },
+                  { name: "Message", value: $message, inline: false },
+                  { name: "🔍 Xem log", value: $logValue, inline: false }
+                ]
+              }]
+            }')
+
           curl --retry 3 --retry-delay 2 \
           -H "Content-Type: application/json" \
           -X POST \
-          -d "{
-            \"content\": \"$STATUS\",
-            \"embeds\": [{
-              \"title\": \"$TITLE\",
-              \"color\": $COLOR,
-              \"fields\": [
-                { \"name\": \"Service\",    \"value\": \"${{ github.event.client_payload.service }}\", \"inline\": true },
-                { \"name\": \"Actor\",      \"value\": \"${{ github.event.client_payload.actor }}\",   \"inline\": true },
-                { \"name\": \"Thời gian\",  \"value\": \"$DEPLOY_TIME (UTC+7)\",                       \"inline\": true },
-                { \"name\": \"Commit\",     \"value\": \"${{ github.event.client_payload.commit }}\",  \"inline\": false },
-                { \"name\": \"Message\",    \"value\": \"${{ github.event.client_payload.message }}\", \"inline\": false },
-                { \"name\": \"🔍 Xem log\", \"value\": \"[Bấm vào đây](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\", \"inline\": false }
-              ]
-            }]
-          }" \
-          ${{ secrets.DISCORD_WEBHOOK_URL }}
+          -d "$PAYLOAD" \
+          "${{ secrets.DISCORD_WEBHOOK_URL }}"
